@@ -1,0 +1,5 @@
+*old*
+*.env
+test
+__pycache__
+*test*
