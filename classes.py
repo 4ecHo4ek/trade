@@ -1,9 +1,13 @@
 
 
 class CommonInfo:
-    def __init__(self, api_key, api_secret, precentProfit: float, percentStopLoss: float, tradeSumm: float, delimeter: int, tradeCoin: str, filaName: str, minimunQuoteVolume: float, minimunTradesCount: float, lossCounter: int, excludeFile: str) -> None:
+    def __init__(self, api_key, api_secret, growPercent: float, precentProfit: float, percentStopLoss: float, 
+                tradeSumm: float, delimeter: int, tradeCoin: str, filaName: str, minimunQuoteVolume: float,
+                minimunTradesCount: float, lossCounter: int, excludeFile: str, moneyLimit: float, pathToEnvFile: str, 
+                changingTime) -> None:
         self.api_key = api_key
         self.api_secret = api_secret
+        self.growPercent = growPercent
         self.precentProfit = precentProfit
         self.percentStopLoss = percentStopLoss
         self.tradeSumm = tradeSumm
@@ -14,6 +18,9 @@ class CommonInfo:
         self.minimunTradesCount = minimunTradesCount
         self.lossCounter = lossCounter
         self.excludeFile = excludeFile
+        self.moneyLimit = moneyLimit
+        self.pathToEnvFile = pathToEnvFile
+        self.changingTime = changingTime
     
 
 class AccountInfo:
@@ -23,7 +30,9 @@ class AccountInfo:
        
 
 class TradeInfo:
-    def __init__(self, pairName, minPrice: float, profit: float, orederID: int, priceTimeDict, openPrice: float, profitPrice: float, stopLossPrice: float, quantity: float, baseAsset, quoteAsset, lossCounter: int, profitCounter: int, stopTrade, sizeP: int, sizeQ: int, tradeSumm: float) -> None:
+    def __init__(self, pairName, minPrice: float, profit: float, orederID: int, priceTimeDict, openPrice: float, 
+                profitPrice: float, stopLossPrice: float, quantity: float, baseAsset, quoteAsset, lossCounter: int,
+                profitCounter: int, stopTrade, sizeP: int, sizeQ: int, tradeSumm: float) -> None:
         self.pairName = pairName
         self.minPrice = minPrice
         self.profit = profit

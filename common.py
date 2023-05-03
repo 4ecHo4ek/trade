@@ -5,25 +5,31 @@ import math
 import classes as classes
 from binance.spot import Spot as Client
 import os
-from decimal import Decimal
+# from decimal import Decimal
 
 
 def readFile(env_file):
     env_vars =  {}
-    with open(env_file) as f:
+    with open(env_file, encoding="utf8") as f:
         for line in f:
             if line.startswith('#') or not line.strip():
                 continue
             key, value = line.strip().split(':', 1)
-            if value[1:].isdigit():
+            try:
                 env_vars[key] = float(value[1:])
-            else:
-                env_vars[key] = value[1:]  
+            except:
+                env_vars[key] = value[1:]
+            # if value[1:].isdigit():
+            #     env_vars[key] = float(value[1:])
+            # else:
+            #     env_vars[key] = value[1:]  
     return(env_vars)
 
 
 def checkValues(env_vars: dict):
     message = ""
+    if not "growPercent" in env_vars:
+        message += "do not have growPercent\n"
     if not "precentProfit" in env_vars:
         message += "do not have precentProfit\n"
     if not "percentStopLoss" in env_vars:
@@ -56,7 +62,28 @@ def checkValues(env_vars: dict):
         message += "do not have logFile\n"
     if not "lossCounter" in env_vars:
         message += "do not have lossCounter\n"
+    if not "moneyLimit" in env_vars:
+        message += "do not have moneyLimit\n"
     return(message)
+
+
+def checkDiffInEnvFile(commonInfo: classes.CommonInfo, data):
+    if data["growPercent"] != commonInfo.growPercent:
+        commonInfo.growPercent = data["growPercent"]
+    if data["precentProfit"] != commonInfo.precentProfit:
+        commonInfo.precentProfit = data["precentProfit"]
+    if data["percentStopLoss"] != commonInfo.percentStopLoss:
+        commonInfo.percentStopLoss = data["percentStopLoss"]
+    if data["tradeSumm"] != commonInfo.tradeSumm:
+        commonInfo.tradeSumm = data["tradeSumm"]
+    if data["delimeter"] != commonInfo.delimeter:
+        commonInfo.delimeter = data["delimeter"]
+    if data["lossCounter"] != commonInfo.lossCounter:
+        commonInfo.lossCounter = data["lossCounter"]
+    if data["moneyLimit"] != commonInfo.moneyLimit:
+        commonInfo.moneyLimit = data["moneyLimit"]
+    return(commonInfo)
+
 
 
 def calcPersent(currentValue: float, lastValue: float):
@@ -160,12 +187,6 @@ def orderDone(client: Client, pairInfo: classes.TradeInfo, timestamp):
     return(info)
     
 
-# def checkOrder(client: Client, pairName, timestamp):
-#     info = client.get_open_orders(symbol=pairName, timestamp=timestamp)
-#     if len(info)  > 0:
-#         return(True)
-#     return(False)
-
 
 def buyOrSellMarket(client: Client, pairInfo: classes.TradeInfo, timestamp, command):
     info = client.new_order(symbol=pairInfo.pairName, quantity=pairInfo.quantity, side=command, type="MARKET", timestamp=timestamp)
@@ -185,48 +206,20 @@ def getValueOfCoin(client: Client, tradeCoin, timestamp):
     return(0)
 
 
-
-# def correctValuesForTrade(pairInfo: classes.TradeInfo, precentProfit, percentStopLoss, tradeSumm, currentPrice, moneyLimit):
-#     sizeQ = pairInfo.sizeQ
-#     sizeP = pairInfo.sizeP
+def correctValuesForTrade(pairInfo: classes.TradeInfo, precentProfit, percentStopLoss, tradeSumm):
     
-#     quantity = round_down(tradeSumm / currentPrice, sizeQ)
-#     profitPrice = round_down(currentPrice * (100 + precentProfit) / 100, sizeP)
-#     precentProfitValue = round(tradeSumm * precentProfit / 100, sizeP)
-
-
-#     while round_down(round_down(profitPrice * quantity, 2) - tradeSumm, 2) < precentProfitValue and round_down(quantity * profitPrice * 0.9999, sizeP) <= tradeSumm:
-#         precentProfit += 0.1
-#         profitPrice = round_down(currentPrice * (100 + precentProfit) / 100, sizeP)
-
-#     pairInfo.quantity = round_down(quantity, sizeQ)
-#     if quantity * currentPrice > tradeSumm:
-#         tradeSumm = quantity * currentPrice
-#     pairInfo.profitPrice = float(profitPrice)
-#     pairInfo.stopLossPrice = round_down(currentPrice * (100 - percentStopLoss) / 100, sizeP)
-#     pairInfo.tradeSumm = round_down(tradeSumm, sizeP)
-
-#     print(f"correctValuesForTrade\t{pairInfo.pairName}\ttradeSumm = {pairInfo.tradeSumm}\tprofitPrice = {pairInfo.profitPrice}\tquantity = {pairInfo.quantity}")
-#     print(f"\t\t\tprobably profit = {round_down(pairInfo.quantity * (pairInfo.profitPrice - currentPrice), 2)}")
-
-#     return(pairInfo)
-
-
-
-def correctValuesForTrade(pairInfo: classes.TradeInfo, precentProfit, percentStopLoss, tradeSumm, currentPrice):
-    
-    profitPrice = round_down(currentPrice * (100 + precentProfit) / 100, pairInfo.sizeP)
+    profitPrice = round_down(pairInfo.openPrice * (100 + precentProfit) / 100, pairInfo.sizeP)
 
     while round_down(round_down(profitPrice * pairInfo.quantity, 2) - tradeSumm, 2) < round(tradeSumm * precentProfit / 100, pairInfo.sizeP) and round_down(pairInfo.quantity * profitPrice * 0.9999, pairInfo.sizeP) <= tradeSumm:
         precentProfit += 0.1
-        profitPrice = round_down(currentPrice * (100 + precentProfit) / 100, pairInfo.sizeP)
+        profitPrice = round_down(pairInfo.openPrice * (100 + precentProfit) / 100, pairInfo.sizeP)
 
     pairInfo.profitPrice = profitPrice
-    pairInfo.stopLossPrice = round_down(currentPrice * (100 - percentStopLoss) / 100, pairInfo.sizeP)
+    pairInfo.stopLossPrice = round_down(pairInfo.openPrice * (100 - percentStopLoss) / 100, pairInfo.sizeP)
     pairInfo.tradeSumm = round_down(tradeSumm, pairInfo.sizeP)
 
     print(f"correctValuesForTrade\t{pairInfo.pairName}\ttradeSumm = {pairInfo.tradeSumm}\tprofitPrice = {pairInfo.profitPrice}\tquantity = {pairInfo.quantity}")
-    print(f"\t\t\tprobably profit = {round_down(pairInfo.quantity * (pairInfo.profitPrice - currentPrice), 2)}")
+    print(f"\t\t\tprobably profit = {round_down(pairInfo.quantity * (pairInfo.profitPrice - pairInfo.openPrice), 2)}")
 
     return(pairInfo)
 
@@ -264,7 +257,7 @@ def makeOrder(client: Client, pairInfo: classes.TradeInfo, commonInfo: classes.C
     timestamp = client.time()
     pairInfo.openPrice = currentPrice(client, pairInfo)
     pairInfo.quantity = round_down(getValueOfCoin(client, pairInfo.baseAsset, timestamp), pairInfo.sizeQ)
-    pairInfo = correctValuesForTrade(pairInfo, precentProfit, percentStopLoss, tradeSumm, pairInfo.openPrice)
+    pairInfo = correctValuesForTrade(pairInfo, precentProfit, percentStopLoss, tradeSumm)
 
     print(f"makeOrder {pairInfo.pairName} value for sale {pairInfo.quantity}")
     order = client.new_order(symbol=pairInfo.pairName, price=pairInfo.profitPrice, quantity=pairInfo.quantity, side="SELL", type="LIMIT", timeInForce="GTC", timestamp=timestamp)
