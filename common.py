@@ -2,10 +2,10 @@ import datetime
 import time
 import requests
 import math
-import classes as classes
+import classes_new as classes
 from binance.spot import Spot as Client
 import os
-# from decimal import Decimal
+import decimal
 
 
 def readFile(env_file):
@@ -18,11 +18,10 @@ def readFile(env_file):
             try:
                 env_vars[key] = float(value[1:])
             except:
-                env_vars[key] = value[1:]
-            # if value[1:].isdigit():
-            #     env_vars[key] = float(value[1:])
-            # else:
-            #     env_vars[key] = value[1:]  
+                if " " in value[1:]:
+                    env_vars[key] = value[1:].split(" ")
+                else:
+                    env_vars[key] = value[1:]
     return(env_vars)
 
 
@@ -38,12 +37,6 @@ def checkValues(env_vars: dict):
         message += "do not have tradeSumm\n"
     if not "delimeter" in env_vars:
         message += "do not have delimeter\n"
-    if not "minimunQuoteVolume" in env_vars:
-        message += "do not have minimunQuoteVolume\n"
-    if not "minimunTradesCount" in env_vars:
-        message += "do not have minimunTradesCount\n"
-    if not "minimunTradesCount" in env_vars:
-        message += "do not have minimunTradesCount\n"
     if not "filaName" in env_vars:
         message += "do not have filaName\n"
     if not "api_key" in env_vars:
@@ -69,25 +62,34 @@ def checkValues(env_vars: dict):
 
 def checkDiffInEnvFile(commonInfo: classes.CommonInfo, data):
     if data["growPercent"] != commonInfo.growPercent:
+        before = commonInfo.growPercent
         commonInfo.growPercent = data["growPercent"]
+        print(f"growPercent has changed from {before} to {commonInfo.growPercent}")
     if data["precentProfit"] != commonInfo.precentProfit:
+        before = commonInfo.precentProfit
         commonInfo.precentProfit = data["precentProfit"]
+        print(f"precentProfit has changed from {before} to {commonInfo.precentProfit}")
     if data["percentStopLoss"] != commonInfo.percentStopLoss:
+        before = commonInfo.percentStopLoss
         commonInfo.percentStopLoss = data["percentStopLoss"]
+        print(f"percentStopLoss has changed from {before} to {commonInfo.percentStopLoss}")
     if data["tradeSumm"] != commonInfo.tradeSumm:
+        before = commonInfo.tradeSumm
         commonInfo.tradeSumm = data["tradeSumm"]
+        print(f"tradeSumm has changed from {before} to {commonInfo.tradeSumm}")
     if data["delimeter"] != commonInfo.delimeter:
+        before = commonInfo.delimeter
         commonInfo.delimeter = data["delimeter"]
+        print(f"delimeter has changed from {before} to {commonInfo.delimeter}")
     if data["lossCounter"] != commonInfo.lossCounter:
+        before = commonInfo.lossCounter
         commonInfo.lossCounter = data["lossCounter"]
+        print(f"lossCounter has changed from {before} to {commonInfo.lossCounter}")
     if data["moneyLimit"] != commonInfo.moneyLimit:
+        before = commonInfo.moneyLimit
         commonInfo.moneyLimit = data["moneyLimit"]
+        print(f"moneyLimit has changed from {before} to {commonInfo.moneyLimit}")
     return(commonInfo)
-
-
-
-def calcPersent(currentValue: float, lastValue: float):
-    return(round(float(currentValue  / lastValue - 1) * 100, 3))
 
 
 def sendMessage(message: str):
@@ -106,23 +108,31 @@ def waitSomeTime(seconds = 0, minutes = 0):
         while (int(datetime.datetime.now().minute) % minutes != 0):
             time.sleep(1)
 
-# TEST
-def writeToFile(filaName ,message):
-    with open(filaName, "a") as file:
-        file.write(f"{message}\n")
+# # TEST
+# def writeToFile(filaName ,message):
+#     with open(filaName, "a") as file:
+#         file.write(f"{message}\n")
 
 # TEST
 def cleanFile(filaName):
     with open(filaName, "w") as file:
         file.write(f"")
 
+# TEST
+def writeToFile(filaName ,message):
+    os.system(f"echo {message} >> {filaName}")
+    os.system(f"echo '\n' >> {filaName}")
 
-
+def calcPersent(currentValue: float, lastValue: float):
+    if lastValue == 0:
+        return(0, 1)
+    return(round(float(currentValue  / lastValue - 1) * 100, 2), 0)
 
 
 def round_down(n, decimals=0):
     multiplier = 10 ** decimals
     return math.floor(n * multiplier) / multiplier
+
 
 def getSize(size):
     log = math.log10(float(size))
@@ -130,8 +140,9 @@ def getSize(size):
         log *= -1 
     return(int(log))
 
+
 def checkIfEnoughtCoinsForTrade(depositCoins, tradeSumm):
-    return(True if float(depositCoins) > float(tradeSumm) else False)
+    return(True if float(depositCoins) >= float(tradeSumm) else False)
 
 
 def zeroTmpVariables(pairInfo: classes.TradeInfo):
@@ -144,154 +155,192 @@ def zeroTmpVariables(pairInfo: classes.TradeInfo):
     return(pairInfo)
 
 
-def currentPrice(client: Client, pairInfo: classes.TradeInfo):
-    price = client.ticker_price(pairInfo.pairName)
+def currentPrice(client: Client, pairName):
+    price = client.ticker_price(pairName)
     price = float(price["price"])
     return(price)
 
 
-def initTradeInfo(pairName: str, pairPrice: float):
-    pairInfo = classes.TradeInfo(pairName, pairPrice, 0, 0, {time.time(): pairPrice}, 0, 0, 0, 0, "", "", 0, 0, False, -1, -1, 0)
-    return(pairInfo)
+def getPairInfo(client: Client, pairTradeInfo: dict, tradeCoin: list, pairName=None):
+    """
+    функция отвечает за получения базовых значений класса TradeInfo (без цены)
+    если передана переменная pairName - поиск только для этой переменной
+    """
+    notValid = False
+    if pairName == None:
+
+        try:
+            info = client.exchange_info()
+        except:
+            return(None, 2)
+    else:
+        try:
+            info = client.exchange_info(pairName)
+            notValid = True
+        except:
+            return(pairTradeInfo, 1)
+    for i in info["symbols"]:  
+        if i["status"] != "BREAK" and i["quoteAsset"] in tradeCoin and "SPOT" in i["permissions"]:
+            name = i["symbol"]
+            baseAsset = i["baseAsset"]
+            quoteAsset = i["quoteAsset"]
+
+            pricePrecision = getSize(i["filters"][0]["minPrice"])
+            qtyPrecision = getSize(i["filters"][1]["minQty"])
+            pairPrice = currentPrice(client, name)
+            pairTradeInfo[name] = classes.TradeInfo(name, 0, pairPrice, 0, {time.time(): pairPrice}, 0, 0, 0, 0, 
+                                                    baseAsset, quoteAsset, 0, 0, False, 
+                                                    pricePrecision, qtyPrecision, 0)
+        elif notValid:
+            return(pairTradeInfo, 1)
+    return(pairTradeInfo, 0)
+
+
+def getAllPairsPrice(client: Client, commonInfo: classes.CommonInfo, pairTradeInfo: dict):
+    symbols = []
+    for key in pairTradeInfo.keys():
+        symbols.append(key)
+    try:
+        prices = client.ticker_price(symbols=symbols)
+    except:
+        print("could not get info about price of all coins")
+        return(pairTradeInfo, 1)
+
+    for i in range(len(prices)):
+
+        price = prices[i]
+
+        pairInfo = pairTradeInfo.get(price["symbol"])
+        if pairInfo == None:
+            pairInfo, err = getPairInfo(client, pairTradeInfo, commonInfo.tradeCoin, price["symbol"])
+            if err:
+                continue
+
+        # else:
+        pairInfo.priceTimeDict[time.time()] = float(price["price"])
+        pairInfo.pairPrice = float(price["price"])
+        pairTradeInfo[price["symbol"]] = pairInfo
+        # print(price["symbol"])
+    # exit(0)
+    return(pairTradeInfo, 0)
 
 
 
-def getProfit(pairInfo: classes.TradeInfo):
 
-    profit = (float(pairInfo.profitPrice) - float(pairInfo.openPrice)) * float(pairInfo.quantity)
-    print(f"profitPrice - {pairInfo.profitPrice}, quantity - {pairInfo.quantity}, openPrice - {pairInfo.openPrice}, profit - {profit}")
-    return(profit)
-
-
-def getPairAndPrice(client: Client, commonInfo: classes.CommonInfo):
-    info = client.ticker_24hr(type="MINI")
-    dictWithInfo = {}
-    for i in info:
-        pairName = i["symbol"]
-        if float(i["lastPrice"]) != 0 and ("USDT" in pairName) and (float(i["quoteVolume"]) > commonInfo.minimunQuoteVolume or float(i["count"]) < commonInfo.minimunTradesCount):
-            dictWithInfo[pairName] = float(i["lastPrice"])
-    return(dictWithInfo)
-
-
-def orderDone(client: Client, pairInfo: classes.TradeInfo, timestamp):
-    # info = client.get_orders(symbol=pairInfo.pairName)
-    # currentTime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-    # for i in info:
-    #     if int(i["orderId"]) == pairInfo.orederID:
-    #         if i["status"] == "FILLED":
-    #             message = f"{currentTime}\torder {pairInfo.orederID} of {pairInfo.pairName} done"
-    #             writeToFile(filaName ,message)
-    #             return(True)
-    # return(False)
-    info = client.get_orders(symbol=pairInfo.pairName, orderId=pairInfo.orederID, limit=1)
-    return(info)
+def orderDone(client: Client, pairInfo: classes.TradeInfo):
+    try:
+        info = client.get_orders(symbol=pairInfo.pairName, orderId=pairInfo.orederID, limit=1)
+    except:
+        print(f"Could not get info adout order {pairInfo.pairName} id {pairInfo.orederID}")
+        return (None, 1)
+    return(info, 0)
     
 
+def buyOrSellMarket(client: Client, pairInfo: classes.TradeInfo, timestamp, command, type, price=None, timeInForce=None):
+    try:
+    
+        if price != None and timeInForce != None:
+            comm = "{:." + f"{pairInfo.sizeP}" + "f}"
+            formatedPrice = comm.format(price)
+            info = client.new_order(symbol=pairInfo.pairName, price=formatedPrice, quantity=pairInfo.quantity, side=command, type=type, timeInForce=timeInForce, timestamp=timestamp)
+        else:
+            info = client.new_order(symbol=pairInfo.pairName, quantity=pairInfo.quantity, side=command, type=type, timestamp=timestamp)
+    except:
+        print(f"buyOrSellMarket\tcould not {command} {pairInfo.pairName} in quantity {pairInfo.quantity}")
+        return(None, 1)
+    return(info, 0)
 
-def buyOrSellMarket(client: Client, pairInfo: classes.TradeInfo, timestamp, command):
-    info = client.new_order(symbol=pairInfo.pairName, quantity=pairInfo.quantity, side=command, type="MARKET", timestamp=timestamp)
-    return(info)
 
 
-
-
-# TODO
 def getValueOfCoin(client: Client, tradeCoin, timestamp):
-    info = client.user_asset(imestamp=timestamp)
+    try:
+        info = client.user_asset(imestamp=timestamp)
+    except:
+        print(f"\nCould not get amount {tradeCoin} coins on account\n")
+        return(None, 2)
     for i in info:
         if i["asset"] == tradeCoin:
-            return(float(i["free"]))
-    # TODO
-    # обработать, если нет пары такой
-    return(0)
+            return(float(i["free"]), 0)
+    print(f"\nTher is no asset {tradeCoin} coin\n{info}")
+    return(None, 2)
 
 
-def correctValuesForTrade(pairInfo: classes.TradeInfo, precentProfit, percentStopLoss, tradeSumm):
+def correctValuesForTrade(pairInfo: classes.TradeInfo, commonInfo: classes.CommonInfo, tradeSumm):
     
-    profitPrice = round_down(pairInfo.openPrice * (100 + precentProfit) / 100, pairInfo.sizeP)
 
-    while round_down(round_down(profitPrice * pairInfo.quantity, 2) - tradeSumm, 2) < round(tradeSumm * precentProfit / 100, pairInfo.sizeP) and round_down(pairInfo.quantity * profitPrice * 0.9999, pairInfo.sizeP) <= tradeSumm:
-        precentProfit += 0.1
+    precentProfit = commonInfo.precentProfit
+    profitPrice = round_down(pairInfo.openPrice * (100 + precentProfit) / 100, pairInfo.sizeP)
+    while round_down(profitPrice * pairInfo.quantity * 0.9999 - tradeSumm * (1 + commonInfo.precentProfit / 100), pairInfo.sizeP) < 0:
+        precentProfit += 1
         profitPrice = round_down(pairInfo.openPrice * (100 + precentProfit) / 100, pairInfo.sizeP)
+        print(f"new sum = {precentProfit * pairInfo.quantity * 0.9999}, tradeSumm = {tradeSumm}, percent = {(1 + commonInfo.precentProfit / 100)} , tradeSumm with percent = {tradeSumm * (1 + commonInfo.precentProfit / 100)}")
 
     pairInfo.profitPrice = profitPrice
-    pairInfo.stopLossPrice = round_down(pairInfo.openPrice * (100 - percentStopLoss) / 100, pairInfo.sizeP)
+    pairInfo.stopLossPrice = round_down(pairInfo.openPrice * (100 - commonInfo.percentStopLoss) / 100, pairInfo.sizeP)
     pairInfo.tradeSumm = round_down(tradeSumm, pairInfo.sizeP)
 
     print(f"correctValuesForTrade\t{pairInfo.pairName}\ttradeSumm = {pairInfo.tradeSumm}\tprofitPrice = {pairInfo.profitPrice}\tquantity = {pairInfo.quantity}")
-    print(f"\t\t\tprobably profit = {round_down(pairInfo.quantity * (pairInfo.profitPrice - pairInfo.openPrice), 2)}")
+    print(f"\t\t\tprobably profit = {round_down(pairInfo.quantity * pairInfo.profitPrice - tradeSumm, 2)}")
 
     return(pairInfo)
 
 
+def makeOrder(client: Client, pairInfo: classes.TradeInfo, commonInfo: classes.CommonInfo, tradeSumm: float, timestamp):
+    pairInfo.pairPrice = currentPrice(client, pairInfo.pairName)
+    pairInfo.quantity = round_down(tradeSumm / pairInfo.pairPrice, pairInfo.sizeQ)
+    pairInfo.openPrice = pairInfo.pairPrice
+    info, err = buyOrSellMarket(client, pairInfo, timestamp, "BUY", "MARKET")
+    if err:
+        print("could not buy")
+        return(None, 1)
+    print("BUY")
+    print(info)
+    time.sleep(0.8)
 
-def getAdditionInfoAboutPair(client: Client, pairInfo: classes.TradeInfo):
-    info = client.exchange_info(pairInfo.pairName)
-    for i in info["symbols"]:
-        sizeP = i["filters"][0]["minPrice"]
-        sizeQ = i["filters"][1]["minQty"]
-        baseAsset = info["symbols"][0]["baseAsset"]
-        quoteAsset = info["symbols"][0]["quoteAsset"]
-    pairInfo.sizeP = getSize(sizeP)
-    pairInfo.sizeQ = getSize(sizeQ)
-    pairInfo.baseAsset = baseAsset
-    pairInfo.quoteAsset = quoteAsset
-    return(pairInfo)
-
-
-def makeOrder(client: Client, pairInfo: classes.TradeInfo, commonInfo: classes.CommonInfo, accauntInfo: classes.AccountInfo, pairPrice: float, precentProfit: float, percentStopLoss: float, tradeSumm: float, timestamp):
-    print(f"{pairInfo.pairName} start making order")
-    if pairInfo.sizeP == -1 or pairInfo.sizeQ == -1:
-        pairInfo = getAdditionInfoAboutPair(client, pairInfo)
-
-    pairInfo.quantity = round_down(tradeSumm / pairPrice, pairInfo.sizeQ)
-    timestamp = client.time()
-    accauntInfo.mainCoinBalance -= pairInfo.tradeSumm
-
-    print(f"start buying\nbuy {pairInfo.quantity} coins")
-    info = buyOrSellMarket(client, pairInfo, timestamp, "BUY")
-    print(f"BUY\t{info}")
-    # qty': '15.00000000', 'commission'
-    time.sleep(0.5)
-
-    timestamp = client.time()
-    pairInfo.openPrice = currentPrice(client, pairInfo)
-    pairInfo.quantity = round_down(getValueOfCoin(client, pairInfo.baseAsset, timestamp), pairInfo.sizeQ)
-    pairInfo = correctValuesForTrade(pairInfo, precentProfit, percentStopLoss, tradeSumm)
-
-    print(f"makeOrder {pairInfo.pairName} value for sale {pairInfo.quantity}")
-    order = client.new_order(symbol=pairInfo.pairName, price=pairInfo.profitPrice, quantity=pairInfo.quantity, side="SELL", type="LIMIT", timeInForce="GTC", timestamp=timestamp)
-    print(f"new_order\t{order}\n")
+    baseAssetOnAccaunt, err = getValueOfCoin(client, pairInfo.baseAsset, timestamp)
+    if err == 2:
+        print("uncnown error with getting value")
+        return(None, 3)
+    pairInfo.quantity = round_down(baseAssetOnAccaunt, pairInfo.sizeQ)
+    pairInfo = correctValuesForTrade(pairInfo, commonInfo, tradeSumm)
+    
+    order, err = buyOrSellMarket(client, pairInfo, timestamp, "SELL", "LIMIT", pairInfo.profitPrice, "GTC")
+    if err:
+        print("could not make order to sell")
+        return(None, 2)
+    
+    print("MAKE ORDER")
+    print(order)
     pairInfo.orederID = int(order["orderId"])
-
-    return(pairInfo, accauntInfo)
+    
+    return(pairInfo, 0)
 
 
 def stopLossOrder(client: Client, pairInfo: classes.TradeInfo, timestamp):
-    
-    info = client.cancel_order(symbol=pairInfo.pairName, timestamp=timestamp, orderId=pairInfo.orederID)
+    try:
+        info = client.cancel_order(symbol=pairInfo.pairName, timestamp=timestamp, orderId=pairInfo.orederID)
+    except:
+        print(f"could not cancel order {pairInfo.pairName}")
+        return(None, 1)
     time.sleep(0.8)
     print(f"cancel_order\t{info}")
 
-    order = buyOrSellMarket(client, pairInfo, timestamp, "SELL")
+    order, err = buyOrSellMarket(client, pairInfo, timestamp, "SELL", "MARKET")
+    if err:
+        print("could not sell")
+        return(None, 1)
     print(f"SELL\t{order}")
-    return(order)
+    return(order, 0)
 
 
     
 def makeFinalCalculations(pairInfo: classes.TradeInfo, info):
-
-    print(info)
-    # summ = round(float(info["origQty"]) * float(info["price"]), 2)
+    print("makeFinalCalculations")
     summ = round(float(info["cummulativeQuoteQty"]), 2)
-    print(f"summ\t{summ}")
-
     profit = round(summ - pairInfo.tradeSumm, 2)
-    print(f"pairInfo.tradeSumm\t{pairInfo.tradeSumm}\nprofit\t{round(summ - pairInfo.tradeSumm, 2)}")
-
-    pairInfo.profit += round(profit, 2)
+    print(f"summ\t\t=\t{summ}\ntradeSumm\t\t=\t{pairInfo.tradeSumm}\nprofit\t\t=\t{profit}")
     pairInfo = zeroTmpVariables(pairInfo)
-    return(pairInfo, profit) # summ, profit - удалить, для тестов
+    return(pairInfo, profit, summ)
 
 
 def ignorePairs(excludeFile, pairName):

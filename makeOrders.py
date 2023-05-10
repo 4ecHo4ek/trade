@@ -1,112 +1,179 @@
 from binance.spot import Spot as Client
 import time
 import sys
-import common as common
-import classes as classes
+import common_new as common
+import classes_new as classes
 import os
+
+
+
+def continueToWork(commonInfo: classes.CommonInfo, pairInfo: classes.TradeInfo, pairsDict: dict):
+    if common.ignorePairs(commonInfo.excludeFile, pairInfo.pairName):
+        return(pairsDict, False)
+    if pairInfo.lossCounter == commonInfo.lossCounter and not pairInfo.stopTrade:
+        pairInfo.stopTrade = True
+        common.sendMessage(f"{pairInfo.pairName}\tstop trading because of many stoplosses")
+    if pairInfo.stopTrade:
+        # обращение
+        pairInfo.profitPrice = common.round_down(pairInfo.pairPrice * (100 + commonInfo.precentProfit) / 100, pairInfo.sizeP)
+        if float(pairInfo.profitPrice) >= pairInfo.findMax():
+            pairInfo.lossCounter -= 1
+        elif float(pairInfo.profitPrice) <= pairInfo.minPrice:
+            pairInfo.lossCounter += 1
+        pairsDict[pairInfo.pairName] = pairInfo
+        if pairInfo.lossCounter == 0:
+            pairInfo.stopTrade = False
+        else:
+            return(pairsDict, False)
+    return(pairsDict, True)
+
+
+def getTradeSumm(commonInfo: classes.CommonInfo, accauntInfo: classes.AccountInfo, pairInfo: classes.TradeInfo):
+    tradeSumm = commonInfo.tradeSumm
+    if accauntInfo.mainCoinBalance < commonInfo.tradeSumm and accauntInfo.mainCoinBalance > commonInfo.minTradeSum:
+        tradeSumm = accauntInfo.mainCoinBalance
+        tradeSumm = common.round_down(tradeSumm, pairInfo.sizeP)
+    return(tradeSumm)
+
+
+def profitOrStopLossEnding(pairInfo: classes.TradeInfo, accauntInfo: classes.AccountInfo, info):
+    pairInfo, profit, getBack = common.makeFinalCalculations(pairInfo, info)
+    accauntInfo.mainCoinBalance += getBack
+    print(f"valid to trade {accauntInfo.mainCoinBalance}")
+    return(pairInfo, accauntInfo, profit)
 
 
 def trade(commonInfo: classes.CommonInfo):
 
     client = Client(commonInfo.api_key, commonInfo.api_secret)
-        # обращение
     timestamp = client.time()
     currentTime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-    accauntInfo = classes.AccountInfo(common.getValueOfCoin(client, commonInfo.tradeCoin, timestamp))
+    tradeCoin, _ = common.getValueOfCoin(client, commonInfo.tradeCoin, timestamp)
+    accauntInfo = classes.AccountInfo(tradeCoin)
     message = f"{currentTime}\t{commonInfo.tradeCoin} on account {accauntInfo.mainCoinBalance}"
     print(message)
 
     totalProfit = 0
-    pairTradeInfo = {}
-    client = None
+    pairsDict = {}
+    
+    pairsDict, err = common.getPairInfo(client, pairsDict, commonInfo.tradeCoin)
+    if err == 2:
+        print("could not get info from server")
+        exit(2)
+
+
+     # получаем свободное количество монет
+    moneyOnAccaunt = common.round_down(accauntInfo.mainCoinBalance, 2)
+    accauntInfo.mainCoinBalance = moneyOnAccaunt if moneyOnAccaunt < commonInfo.moneyLimit else commonInfo.moneyLimit
+    print(f"valid to trade {accauntInfo.mainCoinBalance}")
+
+    common.cleanFile(commonInfo.filaName)
+
     while True:
-        # проверяем изменения энв файла
+        # получаем количество торгуемой монеты
+        tradeCoinSumm, err = common.getValueOfCoin(client, commonInfo.tradeCoin, timestamp)
+        if err:
+            print("could not get money on account")
+            time.sleep(3)
+            continue
+        
+        # # проверяем изменения энв файла
         changingTime = os.stat(commonInfo.pathToEnvFile).st_mtime
         if changingTime != commonInfo.changingTime:
             commonInfo.changingTime = changingTime
-            data = common.readFile(commonInfo.pathToEnvFile)
+            try:
+                data = common.readFile(commonInfo.pathToEnvFile)
+            except:
+                continue
+            oldMoneyLimit = commonInfo.moneyLimit
             commonInfo = common.checkDiffInEnvFile(commonInfo, data)
+            if commonInfo.moneyLimit > oldMoneyLimit:
+                accauntInfo.mainCoinBalance += commonInfo.moneyLimit - oldMoneyLimit 
+        # проверяем, что сумма, которая используется для торгов не вышла за пределы лимита торгов
+        if accauntInfo.mainCoinBalance > commonInfo.moneyLimit:
+            accauntInfo.mainCoinBalance = commonInfo.moneyLimit
+
 
 
         client = Client(commonInfo.api_key, commonInfo.api_secret)
-        pairsDict = common.getPairAndPrice(client, commonInfo)
-
-        for pairName in pairsDict:
-            pairPrice = pairsDict[pairName]
-            if not pairName in pairTradeInfo:
-                pairTradeInfo[pairName] = common.initTradeInfo(pairName, pairPrice)
+        pairsDict, err = common.getAllPairsPrice(client, commonInfo, pairsDict)
+        if err:
+            time.sleep(3)
+            continue
+            
+        timestamp = client.time()
+        for pairName in pairsDict.keys():
+            pairInfo: classes.TradeInfo = pairsDict[pairName]
+            pairsDict, couldWork = continueToWork(commonInfo, pairInfo, pairsDict)
+            if not couldWork:
                 continue
-            pairInfo: classes.TradeInfo = pairTradeInfo[pairName]
 
-            # блок обработки постоянного падения цены
-            if common.ignorePairs(commonInfo.excludeFile, pairName):
-                continue
-            if pairInfo.lossCounter == commonInfo.lossCounter and not pairInfo.stopTrade:
-                pairInfo.stopTrade = True
-            if pairInfo.stopTrade:
-                # обращение
-                pairInfo.profitPrice = common.round_down(pairPrice * (100 + commonInfo.precentProfit) / 100, pairInfo.sizeP)
-                # pairInfo, _, _ = common.calculations(client, pairInfo, pairPrice, commonInfo.precentProfit, commonInfo.percentStopLoss, commonInfo.tradeSumm)
-                if float(pairInfo.profitPrice) >= pairInfo.findMax():
-                    pairInfo.lossCounter -= 1
-                elif float(pairInfo.profitPrice) <= pairInfo.minPrice:
-                    pairInfo.lossCounter += 1
-                pairTradeInfo[pairInfo.pairName] = pairInfo
-                if pairInfo.lossCounter == 0:
-                    pairInfo.stopTrade = False
-                else:
-                    continue
-
-
-            pairInfo.priceTimeDict[time.time()] = pairPrice
+            pairInfo.priceTimeDict[time.time()] = pairInfo.pairPrice
             pairInfo.trimPriceTimeDict(commonInfo.delimeter)
             isEmpty = pairInfo.findMinPrice()
-
             if isEmpty:
                 continue
-            percent = common.calcPersent(pairPrice, pairInfo.minPrice)
-
-            if percent > commonInfo.growPercent:
-                # обращение
-                # получаем свободное количество монет
-                moneyOnAccaunt = common.round_down(common.getValueOfCoin(client, commonInfo.tradeCoin, timestamp), 2)
-                accauntInfo.mainCoinBalance = moneyOnAccaunt if moneyOnAccaunt < commonInfo.moneyLimit else commonInfo.moneyLimit
-                if pairInfo.orederID == 0 and common.checkIfEnoughtCoinsForTrade(accauntInfo.mainCoinBalance, commonInfo.tradeSumm):
-                    try:
-                        # обращение
-                        pairInfo, accauntInfo = common.makeOrder(client, pairInfo, commonInfo, accauntInfo, pairPrice, commonInfo.precentProfit, commonInfo.percentStopLoss, commonInfo.tradeSumm, timestamp)
-                        time.sleep(0.5)
-                    except:
-                        print(f"{pairInfo.pairName}, could not make order")
-                        pairTradeInfo[pairInfo.pairName] = pairInfo
-                        continue
-                    # pairInfo, accauntInfo = common.makeOrder(client, pairInfo, commonInfo, accauntInfo, pairPrice, commonInfo.precentProfit, commonInfo.percentStopLoss, commonInfo.tradeSumm, timestamp)
+            
+            percent, zero = common.calcPersent(pairInfo.pairPrice, pairInfo.minPrice)
+            if zero:
+                pairsDict[pairInfo.pairName] = pairInfo
+                continue
 
             if pairInfo.orederID != 0:
-                # обращение
-                info = common.orderDone(client, pairInfo, timestamp)
+                # проверяем существующие ордера
+                info, err = common.orderDone(client, pairInfo)
+                if err:
+                    pairsDict[pairInfo.pairName] = pairInfo
+                    continue
                 info = info[0]
+                #  если ордер выполнен, считаем прибыль
                 if info["status"] == "FILLED":
                     if pairInfo.lossCounter > 0:
                         pairInfo.lossCounter -= 1
                     print("\nPROFIT")
-                    pairInfo, profit = common.makeFinalCalculations(pairInfo, info)
+                    print(info)
+                    pairInfo, accauntInfo, profit = profitOrStopLossEnding(pairInfo, accauntInfo, info)
                     totalProfit += profit
-                    common.sendMessage(f"{pairInfo.pairName}\ncurrent profit =\t{profit}$\npair profit =\t{round(pairInfo.profit, 2)}$")
+                    common.sendMessage(f"{'PROFIT': <15}{pairInfo.pairName}\ncurrent profit\t=\t{profit}$\ntotal profit\t=\t{totalProfit}")
                 else:
-                    print(f"{pairInfo.pairName: <15}\tto stoploss = {round(float(pairInfo.quantity) * (pairPrice - float(pairInfo.stopLossPrice)), 2)}\t|\tto goal = {round(float(pairInfo.quantity) * (float(pairInfo.profitPrice) - pairPrice), 2)}\t\t|\tto zero = {round(pairPrice - pairInfo.openPrice,2)}")
-                    if pairPrice <= pairInfo.stopLossPrice:
+                    # или, если цена ниже заданного лимита - продаем
+                    currentPrice = common.currentPrice(client, pairInfo.pairName)
+                    print(f"{pairInfo.pairName: <15}\tto stoploss = {round(pairInfo.quantity * (currentPrice - pairInfo.stopLossPrice), 2)}\t|\tto goal = {round(pairInfo.quantity * (pairInfo.profitPrice - currentPrice), 2)}\t\t|\tto zero = {round(pairInfo.quantity * (currentPrice - pairInfo.openPrice),2)}")
+                    if currentPrice <= pairInfo.stopLossPrice:
                         pairInfo.lossCounter += 1
-                        # обращение
-                        info = common.stopLossOrder(client, pairInfo, timestamp)
-                        time.sleep(0.5)
-                        pairInfo, loss = common.makeFinalCalculations(pairInfo, info)
+                        info, err = common.stopLossOrder(client, pairInfo, timestamp)
+                        if err:
+                            print(f"could not make stopploss operation {pairInfo.pairName}")
+                            pairsDict[pairInfo.pairName] = pairInfo
+                            continue
+                        print(f"\nSTOPLOSS")
+                        print(info)
+                        pairInfo, accauntInfo, loss = profitOrStopLossEnding(pairInfo, accauntInfo, info)
                         totalProfit += loss
-                        moneyOnAccaunt = common.round_down(common.getValueOfCoin(client, commonInfo.tradeCoin, timestamp), 2)
-                        accauntInfo.mainCoinBalance = moneyOnAccaunt if moneyOnAccaunt < commonInfo.moneyLimit else commonInfo.moneyLimit
-                        common.sendMessage(f"{pairInfo.pairName}\ncurrent loss =\t{loss}$pair profit =\t{round(pairInfo.profit, 2)}$")
+                        common.sendMessage(f"{'STOPLOSS': <15}{pairInfo.pairName}\ncurrent profit\t=\t{loss}$\ntotal profit\t=\t{totalProfit}")
 
-            pairTradeInfo[pairInfo.pairName] = pairInfo
+            if pairInfo.orederID == 0 and percent > commonInfo.growPercent:
+                # регулируем сумму торгов (если не хватает для установленного лимита, понижаем до разрешенного минимума)
+                tradeSumm = getTradeSumm(commonInfo, accauntInfo, pairInfo)
+                if common.checkIfEnoughtCoinsForTrade(tradeCoinSumm, accauntInfo.mainCoinBalance):
+                    if common.checkIfEnoughtCoinsForTrade(accauntInfo.mainCoinBalance, tradeSumm):
+                        localTime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+                        print(f"{localTime}\n{pairInfo.pairName} start making order")
+                        pairInfo, err = common.makeOrder(client, pairInfo, commonInfo, tradeSumm, timestamp)
+                        if err == 1:
+                            print(f"could not buy to make order")
+                            continue
+                        elif err == 2 or err == 3:
+                            _, err = common.buyOrSellMarket(client, pairInfo, timestamp, "SELL", "MARKET")
+                            if err:
+                                print("could not sell")
+                                continue
+                        accauntInfo.mainCoinBalance -= pairInfo.tradeSumm
+                        print(f"valid to trade {accauntInfo.mainCoinBalance}")
+                else:
+                    print(f"Do not enough {commonInfo.tradeCoin} coins on account")
+
+            pairsDict[pairInfo.pairName] = pairInfo
         time.sleep(3)
 
 
@@ -124,15 +191,13 @@ if __name__ == "__main__":
         commonInfo = classes.CommonInfo(data["api_key"], data["api_secret"], data["growPercent"],
                                         data["precentProfit"], 
                                         data["percentStopLoss"], data["tradeSumm"], data["delimeter"], 
-                                        data["tradeCoin"], data["filaName"], data["minimunQuoteVolume"], 
-                                        data["minimunTradesCount"], data["lossCounter"], data["excludeFile"],
-                                        data["moneyLimit"], pathToEnvFile, changingTime)
+                                        data["tradeCoin"], data["filaName"],
+                                        data["lossCounter"], data["excludeFile"],
+                                        data["moneyLimit"], pathToEnvFile, changingTime, data["minTradeSum"])
         common.cleanFile(commonInfo.filaName)
         trade(commonInfo)
     else:
         print("\ngive values file\n")
-
-
 
 
 # client = Client(commonInfo.api_key, commonInfo.api_secret)
