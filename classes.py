@@ -3,7 +3,7 @@
 class CommonInfo:
     def __init__(self, api_key, api_secret, growPercent: float, precentProfit: float, percentStopLoss: float, 
                 tradeSumm: float, delimeter: int, tradeCoin: str, filaName: str, lossCounter: int, excludeFile: str, moneyLimit: float, pathToEnvFile: str, 
-                changingTime, minTradeSum: float) -> None:
+                changingTime, minTradeSum: float, minimumQuoteVolume: float, searchingLen: int, deltaTime: int, maxTimeOfTrading: int, tradeCounter: int) -> None:
         self.api_key = api_key
         self.api_secret = api_secret
         self.growPercent = growPercent
@@ -19,7 +19,13 @@ class CommonInfo:
         self.pathToEnvFile = pathToEnvFile
         self.changingTime = changingTime
         self.minTradeSum = minTradeSum
+        self.minimumQuoteVolume = minimumQuoteVolume
+        self.searchingLen = searchingLen
+        self.deltaTime = deltaTime
+        self.maxTimeOfTrading = maxTimeOfTrading
+        self.tradeCounter = tradeCounter
     
+
 
 class AccountInfo:
     def __init__(self, mainCoinBalance) -> None:
@@ -28,7 +34,7 @@ class AccountInfo:
        
 
 class TradeInfo:
-    def __init__(self, pairName, minPrice: float, pairPrice: float, orederID: int, priceTimeDict, openPrice: float, 
+    def __init__(self, pairName, minPrice: float, pairPrice: float, orederID: int, priceTimeDict: dict, openPrice: float, 
                 profitPrice: float, stopLossPrice: float, quantity: float, baseAsset, quoteAsset, lossCounter: int,
                 profitCounter: int, stopTrade, sizeP: int, sizeQ: int, tradeSumm: float) -> None:
         self.pairName = pairName
@@ -48,6 +54,9 @@ class TradeInfo:
         self.sizeP = sizeP # количество знаков после запятой для цены
         self.sizeQ = sizeQ # количество знаков после запятой для объема
         self.tradeSumm = tradeSumm # обнулять
+        self.startTradeTime = 0
+        self.tradeCounter = 0
+        self.goodTrand = False
     
 
     def addProfit(self, profit):
@@ -77,4 +86,7 @@ class TradeInfo:
         if len(self.priceTimeDict.values()) == 0:
             return(0)
         return(max(self.priceTimeDict.values()))
+
+    def cleanPriceTimeDict(self):
+        self.priceTimeDict.clear()
 

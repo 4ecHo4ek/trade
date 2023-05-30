@@ -2,9 +2,10 @@ from flask import Flask, request, jsonify
 import telebot
 # from twilio import twiml
 import sys
-import os
+# import os
 import subprocess
-import common as common
+# import common as common
+import fileWorking as fileWorking
 
 
 app = Flask(__name__)
@@ -35,7 +36,7 @@ if __name__ == "__main__":
     
     if len (sys.argv) > 1:
         # telegram_token, chat_id = getDataFromFile(str(sys.argv[1]))
-        data = common.readFile(str(sys.argv[1]))
+        data = fileWorking.readFile(str(sys.argv[1]))
         if not "telegram_token" in data:
             print(f"no telegram_token")
             exit(2)
